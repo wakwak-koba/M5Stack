@@ -842,6 +842,7 @@ class TFT_eSPI : public Print {
   static   SPIClass& getSPIinstance(void);
 
   int32_t  cursor_x, cursor_y, padX;
+  uint32_t fillcolor;
   uint32_t textcolor, textbgcolor;
 
   uint32_t bitmap_fg, bitmap_bg;
@@ -856,6 +857,11 @@ class TFT_eSPI : public Print {
 
   uint8_t  decoderState = 0;   // UTF8 decoder state
   uint16_t decoderBuffer;      // Unicode code-point buffer
+
+  void    scrollVertical(int dy) {scrollVertical(dy, fillcolor);};
+  void    scrollVertical(int dy, uint32_t bgcolor);
+  void    scrollHorizontal(int dx) {scrollHorizontal(dx, fillcolor);};
+  void    scrollHorizontal(int dx, uint32_t bgcolor);
 
  private:
 

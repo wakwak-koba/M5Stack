@@ -207,7 +207,7 @@ TFT_eSPI::TFT_eSPI(int16_t w, int16_t h)
   textfont  = 1;
   textsize  = 1;
   textcolor   = bitmap_fg = 0xFFFF; // White
-  textbgcolor = bitmap_bg = 0x0000; // Black
+  textbgcolor = bitmap_bg = fillcolor = 0x0000; // Black
   padX = 0;             // No padding
   isDigits   = false;   // No bounding box adjustment
   textwrapX  = true;    // Wrap text at end of line when using print stream
@@ -1891,7 +1891,7 @@ void TFT_eSPI::fillEllipse(int16_t x0, int16_t y0, int32_t rx, int32_t ry, uint1
 ***************************************************************************************/
 void TFT_eSPI::fillScreen(uint32_t color)
 {
-  fillRect(0, 0, _width, _height, color);
+  fillRect(0, 0, _width, _height, fillcolor = color);
 }
 
 
@@ -4252,6 +4252,13 @@ size_t TFT_eSPI::write(uint8_t utf8)
   if (utf8 == '\n') {
     cursor_y += height;
     cursor_x  = 0;
+    if (cursor_y >= (int32_t)_height) {
+      if(textwrapY) cursor_y = 0;
+      else  {
+        scrollVertical(-height);
+        cursor_y -= height;
+      }
+    }
   }
   else
   {
@@ -4260,7 +4267,13 @@ size_t TFT_eSPI::write(uint8_t utf8)
       cursor_y += height;
       cursor_x = 0;
     }
-    if (textwrapY && (cursor_y >= (int32_t)_height)) cursor_y = 0;
+    if (cursor_y >= (int32_t)_height) {
+      if(textwrapY) cursor_y = 0;
+      else  {
+        scrollVertical(-height);
+        cursor_y -= height;
+      }
+    }
     cursor_x += drawChar(uniCode, cursor_x, cursor_y, textfont);
   }
 
@@ -4270,9 +4283,17 @@ size_t TFT_eSPI::write(uint8_t utf8)
   else
   {
     if(utf8 == '\n') {
-      cursor_x  = 0;
-      cursor_y += (int16_t)textsize *
+      height = (int16_t)textsize *
                   (uint8_t)pgm_read_byte(&gfxFont->yAdvance);
+      cursor_x  = 0;
+      cursor_y += height;
+      if (cursor_y >= (int32_t)_height) {
+        if(textwrapY) cursor_y = 0;
+        else  {
+          scrollVertical(-height);
+          cursor_y -= height;
+        }
+      }
     } else {
 
       bool is_in_block_flag = false;
@@ -4312,13 +4333,20 @@ size_t TFT_eSPI::write(uint8_t utf8)
                 h     = pgm_read_byte(&glyph->height);
       if((w > 0) && (h > 0)) { // Is there an associated bitmap?
         int16_t xo = (int8_t)pgm_read_byte(&glyph->xOffset);
+        height = (int16_t)textsize *
+                      (uint8_t)pgm_read_byte(&gfxFont->yAdvance);
         if(textwrapX && ((cursor_x + textsize * (xo + w)) > _width)) {
           // Drawing character would go off right edge; wrap to new line
           cursor_x  = 0;
-          cursor_y += (int16_t)textsize *
-                      (uint8_t)pgm_read_byte(&gfxFont->yAdvance);
+          cursor_y += height;
         }
-        if (textwrapY && (cursor_y >= (int32_t)_height)) cursor_y = 0;
+        if (cursor_y >= (int32_t)_height) {
+          if(textwrapY) cursor_y = 0;
+          else  {
+            scrollVertical(-height);
+            cursor_y -= height;
+          }
+        }
         drawChar(cursor_x, cursor_y, uniCode, textcolor, textbgcolor, textsize);
       }
       cursor_x += pgm_read_byte(&glyph->xAdvance) * (int16_t)textsize;
@@ -6025,7 +6053,14 @@ void TFT_eSPI::drawGlyph(uint16_t code)
     if (code == '\n') {
       cursor_x = 0;
       cursor_y += gFont.yAdvance;
-      if (cursor_y >= _height) cursor_y = 0;
+      if (cursor_y >= _height)  {
+        if(textwrapY) cursor_y = 0;
+        else
+        {
+          scrollVertical(-gFont.yAdvance);
+          cursor_y -= gFont.yAdvance;
+        }
+      }
       return;
     }
   }
@@ -6044,7 +6079,13 @@ void TFT_eSPI::drawGlyph(uint16_t code)
       cursor_y += gFont.yAdvance;
       cursor_x = 0;
     }
-    if (textwrapY && ((cursor_y + gFont.yAdvance) >= _height)) cursor_y = 0;
+    if ((cursor_y + gFont.yAdvance) >= _height) {
+      if(textwrapY) cursor_y = 0;
+      else  {
+        scrollVertical(-gFont.yAdvance);
+        cursor_y -= gFont.yAdvance;
+      }
+    }
     if (cursor_x == 0) cursor_x -= gdX[gNum];
 
     fontFile.seek(gBitmap[gNum], fs::SeekSet); // This is taking >30ms for a significant position shift
@@ -6161,6 +6202,38 @@ void TFT_eSPI::showFont(uint32_t td)
   fillScreen(textbgcolor);
   //fontFile.close();
 
+}
+
+/***************************************************************************************
+** Function name:           scrollVertical
+** Description:             Vertically Scrolling
+*************************************************************************************x*/
+void  TFT_eSPI::scrollVertical(int dy, uint32_t bgcolor)
+{
+  if(!dy) return;
+
+  uint16_t* buffer = new uint16_t[_width];
+  if(dy > 0)
+  {
+    // Scroll down
+    for(int y = _height - dy - 1; y >= 0; y--)
+    {
+      readRect(0, y     , _width, 1, buffer);
+      pushRect(0, y + dy, _width, 1, buffer);
+    }
+    fillRect(0,  0, _width, dy - 1, bgcolor);
+  }
+  else
+  {
+    // Scroll up
+    for(int y = -dy; y < _height; y++)
+    {
+      readRect(0, y     , _width, 1, buffer);
+      pushRect(0, y + dy, _width, 1, buffer);
+    }
+    fillRect(0, _height + dy, _width, -dy + 1, bgcolor);
+  }
+  delete []buffer;
 }
 #endif
 
