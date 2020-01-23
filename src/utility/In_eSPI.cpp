@@ -6212,27 +6212,52 @@ void  TFT_eSPI::scrollVertical(int dy, uint32_t bgcolor)
 {
   if(!dy) return;
 
-  uint16_t* buffer = new uint16_t[_width];
+  uint16_t* buffer;
+  int32_t h;
+
+  for(int i = _height; i > 0 ; i--)
+  {
+    if(_height % i == 0)
+    {
+      h = _height / i;
+      buffer = new uint16_t[_width * h];
+      if(buffer)  break;
+    }
+  }
+  if(!buffer) return;
+
   if(dy > 0)
   {
     // Scroll down
-    for(int y = _height - dy - 1; y >= 0; y--)
+    int y = _height - dy;
+    while(y >= 0)
     {
-      readRect(0, y     , _width, 1, buffer);
-      pushRect(0, y + dy, _width, 1, buffer);
+      y -= h;
+      if(y < 0)  {
+        h += y;
+        y = 0;
+      }
+      readRect(0, y     , _width, h, buffer);
+      pushRect(0, y + dy, _width, h, buffer);
+      if(y == 0) break;
     }
-    fillRect(0,  0, _width, dy - 1, bgcolor);
+    fillRect(0,  0, _width, dy, bgcolor);
   }
   else
   {
     // Scroll up
-    for(int y = -dy; y < _height; y++)
+    int y = -dy;
+    while(y < _height)
     {
-      readRect(0, y     , _width, 1, buffer);
-      pushRect(0, y + dy, _width, 1, buffer);
+      if(y + h > _height)
+        h = _height - y;
+      readRect(0, y     , _width, h, buffer);
+      pushRect(0, y + dy, _width, h, buffer);
+      y += h;
     }
-    fillRect(0, _height + dy, _width, -dy + 1, bgcolor);
+    fillRect(0, _height + dy, _width, -dy, bgcolor);
   }
+
   delete []buffer;
 }
 #endif
